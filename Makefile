@@ -13,7 +13,7 @@ DEQP=cd $(DEQP_DIR) && RUST_LOG=debug LD_LIBRARY_PATH=$(FULL_LIBRARY_PATH) ./deq
 DOTA_DIR=../dota2/bin/osx64
 DOTA_EXE=$(DOTA_DIR)/dota2.app/Contents/MacOS/dota2
 #DOTA_PARAMS=-vulkan_disable_occlusion_queries -vulkan_scene_system_job_cost 2
-DOTA_PARAMS=-vulkan_disable_occlusion_queries
+DOTA_PARAMS=-vulkan_disable_occlusion_queries -threads 3
 
 RUST_BACKTRACE:=1
 BACKEND:=gl
@@ -69,12 +69,16 @@ dota-debug: version-debug $(DOTA_EXE)
 	echo "env DYLD_LIBRARY_PATH=$(CURDIR)/target/debug:$(CURDIR)/$(DOTA_DIR)" >.lldbinit
 	DYLD_LIBRARY_PATH=$(CURDIR)/target/debug:$(CURDIR)/$(DOTA_DIR) $(DEBUGGER) $(DOTA_EXE) $(DOTA_PARAMS)
 
+dota-debug-opt: version-release $(DOTA_EXE)
+	echo "env DYLD_LIBRARY_PATH=$(CURDIR)/target/release:$(CURDIR)/$(DOTA_DIR)" >.lldbinit
+	DYLD_LIBRARY_PATH=$(CURDIR)/target/release:$(CURDIR)/$(DOTA_DIR) $(DEBUGGER) $(DOTA_EXE) $(DOTA_PARAMS)
+
 dota-release: version-release $(DOTA_EXE)
 	DYLD_LIBRARY_PATH=$(CURDIR)/target/release:$(CURDIR)/$(DOTA_DIR) $(DOTA_EXE) $(DOTA_PARAMS)
 dota-molten:
 	DYLD_LIBRARY_PATH=$(CURDIR)/../MoltenVK/Package/Release/MoltenVK/macOS:$(CURDIR)/$(DOTA_DIR) $(DOTA_EXE)
 dota-orig:
-	DYLD_LIBRARY_PATH=$(CURDIR)/$(DOTA_DIR) $(DOTA_EXE)
+	DYLD_LIBRARY_PATH=$(CURDIR)/$(DOTA_DIR) $(DOTA_EXE) $(DOTA_PARAMS)
 
 binding: $(BINDING)
 

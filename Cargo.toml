@@ -4,3 +4,7 @@ members = [
     "libportability-gfx",
     "libportability-icd",
 ]
+
+[patch.crates-io]
+objc = { path = "../rust-objc" }
+metal-rs = { path = "../metal-rs" }

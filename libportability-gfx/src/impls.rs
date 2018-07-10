@@ -2303,19 +2303,18 @@ pub extern "C" fn gfxCreateDescriptorSetLayout(
             }
         });
 
-    let mut bindings = Vec::with_capacity(layout_bindings.len());
-    for binding in layout_bindings {
-        bindings.push(pso::DescriptorSetLayoutBinding {
+    let bindings = layout_bindings
+        .iter()
+        .map(|binding| pso::DescriptorSetLayoutBinding {
             binding: binding.binding as _,
             ty: conv::map_descriptor_type(binding.descriptorType),
             count: binding.descriptorCount as _,
             stage_flags: conv::map_stage_flags(binding.stageFlags),
             immutable_samplers: !binding.pImmutableSamplers.is_null(),
         });
-    }
 
     let set_layout = gpu.device
-        .create_descriptor_set_layout(&bindings, sampler_iter);
+        .create_descriptor_set_layout(bindings, sampler_iter);
 
     unsafe { *pSetLayout = Handle::new(set_layout); }
     VkResult::VK_SUCCESS
@@ -2343,12 +2342,15 @@ pub extern "C" fn gfxCreateDescriptorPool(
         slice::from_raw_parts(info.pPoolSizes, info.poolSizeCount as _)
     };
 
+    println!("[{:?}] gfxCreateDescriptorPool", ::std::thread::current().id());
+
     let ranges = pool_sizes
         .iter()
         .map(|pool| {
+            println!("\t{:?} [{}]", conv::map_descriptor_type(pool.type_), pool.descriptorCount);
             pso::DescriptorRangeDesc {
                 ty: conv::map_descriptor_type(pool.type_),
-                count: pool.descriptorCount as _,
+                count: pool.descriptorCount as _, //TEMP!!!
             }
         })
         .collect::<Vec<_>>();
@@ -2364,6 +2366,7 @@ pub extern "C" fn gfxCreateDescriptorPool(
     };
 
     unsafe { *pDescriptorPool = Handle::new(pool); }
+    println!("\t[{:?}] {:?}", ::std::thread::current().id(), unsafe { *pDescriptorPool });
     VkResult::VK_SUCCESS
 }
 #[inline]
@@ -2372,6 +2375,7 @@ pub extern "C" fn gfxDestroyDescriptorPool(
     descriptorPool: VkDescriptorPool,
     _pAllocator: *const VkAllocationCallbacks,
 ) {
+    println!("[{:?}]gfxDestroyDescriptorPool {:?}", ::std::thread::current().id(), descriptorPool);
     if let Some(pool) = descriptorPool.unbox() {
         gpu.device.destroy_descriptor_pool(pool.raw);
         if let Some(sets) = pool.sets {
@@ -2387,6 +2391,7 @@ pub extern "C" fn gfxResetDescriptorPool(
     mut descriptorPool: VkDescriptorPool,
     _flags: VkDescriptorPoolResetFlags,
 ) -> VkResult {
+    println!("[{:?}] gfxResetDescriptorPool {:?}", ::std::thread::current().id(), descriptorPool);
     descriptorPool.raw.reset();
     if let Some(ref mut sets) = descriptorPool.sets {
         for set in sets.drain(..) {
@@ -2402,7 +2407,9 @@ pub extern "C" fn gfxAllocateDescriptorSets(
     pDescriptorSets: *mut VkDescriptorSet,
 ) -> VkResult {
     let info = unsafe { &mut *(pAllocateInfo as *mut VkDescriptorSetAllocateInfo) };
-    let pool = &mut info.descriptorPool;
+
+    println!("[{:?}] gfxAllocateDescriptorSets from {:?}", ::std::thread::current().id(), info.descriptorPool);
+    let pool = &mut *info.descriptorPool;
 
     let set_layouts = unsafe {
         slice::from_raw_parts(info.pSetLayouts, info.descriptorSetCount as _)
@@ -2415,41 +2422,37 @@ pub extern "C" fn gfxAllocateDescriptorSets(
     let sets = unsafe {
         slice::from_raw_parts_mut(pDescriptorSets, info.descriptorSetCount as _)
     };
-    let mut result = VkResult::VK_SUCCESS;
     assert_eq!(descriptor_sets.len(), info.descriptorSetCount as usize);
 
-    for (i, raw_set) in descriptor_sets.into_iter().enumerate() {
-        match raw_set {
-            Ok(set) => {
-                sets[i] = Handle::new(set);
-            }
-            Err(e) => {
-                // revert all the changes!
-                for set in sets[..i].iter_mut() {
-                    let _ = set.unbox();
-                }
-                for set in sets.iter_mut() {
-                    *set = Handle::null();
-                }
-                result = match e {
-                    pso::AllocationError::OutOfHostMemory => VkResult::VK_ERROR_OUT_OF_HOST_MEMORY,
-                    pso::AllocationError::OutOfDeviceMemory => VkResult::VK_ERROR_OUT_OF_DEVICE_MEMORY,
-                    pso::AllocationError::OutOfPoolMemory => VkResult::VK_ERROR_OUT_OF_POOL_MEMORY_KHR,
-                    pso::AllocationError::IncompatibleLayout => VkResult::VK_ERROR_DEVICE_LOST,
-                    pso::AllocationError::FragmentedPool => VkResult::VK_ERROR_FRAGMENTED_POOL,
-                };
-                break;
-            }
-        };
-    }
+    let error = descriptor_sets
+        .iter()
+        .find(|raw_set| raw_set.is_err())
+        .cloned();
 
-    if result == VkResult::VK_SUCCESS {
-        if let Some(ref mut local_sets) = pool.sets {
-            local_sets.extend_from_slice(sets);
+    match error {
+        Some(Err(e)) => {
+            pool.raw.free_sets(descriptor_sets.into_iter().filter_map(|ds| ds.ok()));
+            for set in sets.iter_mut() {
+                *set = Handle::null();
+            }
+            match e {
+                pso::AllocationError::OutOfHostMemory => VkResult::VK_ERROR_OUT_OF_HOST_MEMORY,
+                pso::AllocationError::OutOfDeviceMemory => VkResult::VK_ERROR_OUT_OF_DEVICE_MEMORY,
+                pso::AllocationError::OutOfPoolMemory => VkResult::VK_ERROR_OUT_OF_POOL_MEMORY_KHR,
+                pso::AllocationError::IncompatibleLayout => VkResult::VK_ERROR_DEVICE_LOST,
+                pso::AllocationError::FragmentedPool => VkResult::VK_ERROR_FRAGMENTED_POOL,
+            }
+        }
+        _ => {
+            for (set, raw_set) in sets.iter_mut().zip(descriptor_sets) {
+                *set = Handle::new(raw_set.unwrap());
+            }
+            if let Some(ref mut local_sets) = pool.sets {
+                local_sets.extend_from_slice(sets);
+            }
+            VkResult::VK_SUCCESS
         }
     }
-
-    result
 }
 #[inline]
 pub extern "C" fn gfxFreeDescriptorSets(
@@ -2458,6 +2461,7 @@ pub extern "C" fn gfxFreeDescriptorSets(
     descriptorSetCount: u32,
     pDescriptorSets: *const VkDescriptorSet,
 ) -> VkResult {
+    println!("[{:?}] gfxFreeDescriptorSets from {:?}", ::std::thread::current().id(), descriptorPool);
     let descriptor_sets = unsafe {
         slice::from_raw_parts(pDescriptorSets, descriptorSetCount as _)
     };
