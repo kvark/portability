@@ -2352,7 +2352,23 @@ pub extern "C" fn gfxCreateDescriptorPool(
                 ty: conv::map_descriptor_type(pool.type_),
                 count: pool.descriptorCount as _,
             }
-        });
+        })
+        .chain(
+            if pool_sizes.len() == 1 {
+                Some(pso::DescriptorRangeDesc {
+                    ty: pso::DescriptorType::SampledImage,
+                    count: 10,
+                })
+            } else { None }
+        )
+        .chain(
+            if pool_sizes.len() == 1 {
+                Some(pso::DescriptorRangeDesc {
+                    ty: pso::DescriptorType::Sampler,
+                    count: 10,
+                })
+            } else { None }
+        );
 
     let pool = super::DescriptorPool {
         raw: gpu.device
