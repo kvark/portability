@@ -60,7 +60,7 @@ FULL_LIBRARY_PATH=$(CURDIR)/target/debug
 LIBRARY=target/debug/libportability.$(LIB_EXTENSION)
 LIBRARY_FAST=target/release/libportability.$(LIB_EXTENSION)
 
-.PHONY: all dummy rebuild debug release version-debug version-release binding run-native cts clean cherry dota-debug dota-release dota-orig dota-bench-gfx dota-bench-orig dota-bench-gl package memcpy-report
+.PHONY: all dummy check-target rebuild debug release version-debug version-release binding run-native cts clean cherry dota-debug dota-release dota-orig dota-bench-gfx dota-bench-orig dota-bench-gl package memcpy-report
 
 all: $(NATIVE_TARGET)
 
@@ -80,6 +80,9 @@ version-debug:
 version-release:
 	cargo rustc --release --manifest-path libportability/Cargo.toml --features $(BACKEND) $(CLINK_ARGS)
 
+check-target:
+	cargo check --manifest-path libportability/Cargo.toml --target $(TARGET) --features $(BACKEND)
+	cargo check --manifest-path libportability-icd/Cargo.toml --target $(TARGET) --features $(BACKEND),portability-gfx/env_logger
 
 dota-debug: version-debug $(DOTA_EXE)
 	DYLD_LIBRARY_PATH=$(CURDIR)/target/debug:$(CURDIR)/$(DOTA_DIR) $(DOTA_EXE) $(DOTA_PARAMS)
